@@ -1,0 +1,137 @@
+version: '3'
+
+volumes:
+  django_app_postgres_data: {}
+  django_app_postgres_data_backups: {}
+
+services:
+  django:
+    build:
+      context: .
+      dockerfile: ./django-app/Dockerfile
+    image: django_app
+    container_name: django_app
+    platform: linux/x86_64
+    volumes:
+      - ./django-app:/django-app:z
+    env_file:
+      - ./.envs/.local/.django
+      - ./.envs/.local/.postgres
+    command: /start
+    depends_on:
+      - postgres
+    restart: always
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.frontend.rule=PathPrefix:/django-app'
+      - 'traefik.frontend.entryPoints=web'
+      - 'traefik.http.routers.django.rule=Host(`localhost`) && PathPrefix(`/django-app`)'
+      - "traefik.http.middlewares.django-stripprefix.stripprefix.prefixes=/django-app"
+      - "traefik.http.routers.django.middlewares=django-stripprefix"
+
+  node:
+    build:
+      context: .
+      dockerfile: ./node-app/Dockerfile
+    image: node_app
+    container_name: node_app
+    platform: linux/x86_64
+    volumes:
+      - ./node-app:/node-app:z
+    env_file:
+      - ./.envs/.local/.node
+      - ./.envs/.local/.postgres
+    depends_on:
+      - postgres
+    restart: always
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.frontend.rule=PathPrefix:/node-app'
+      - 'traefik.frontend.entryPoints=web'
+      - 'traefik.http.routers.node.rule=Host(`localhost`) && PathPrefix(`/node-app`)'
+      - "traefik.http.middlewares.node-stripprefix.stripprefix.prefixes=/node-app"
+      - "traefik.http.routers.node.middlewares=node-stripprefix"
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+    image: nginx
+    container_name: nginx
+    volumes:
+      - ./nginx:/etc/nginx/conf.d:z
+    restart: unless-stopped
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.frontend.rule=PathPrefix:/static'
+      - 'traefik.frontend.entryPoints=web'
+      - 'traefik.http.routers.nginx.rule=Host(`localhost`) && PathPrefix(`/static`)'
+      # - "traefik.http.routers.nginx.middlewares=nginx-stripprefix"
+      # - "traefik.http.middlewares.nginx-stripprefix.stripprefix.prefixes=/static"
+
+  postgres:
+    build:
+      context: .
+      dockerfile: ./postgres/Dockerfile
+    image: postgres
+    container_name: postgres
+    volumes:
+      - django_app_postgres_data:/var/lib/postgresql/data:Z
+      - django_app_postgres_data_backups:/backups:z
+    env_file:
+      - ./.envs/.local/.postgres
+
+  pgadmin:
+    build:
+      context: .
+      dockerfile: ./pgadmin/Dockerfile
+    container_name: pgadmin
+    image: pgadmin
+    env_file:
+      - ./.envs/.local/.pgadmin
+    restart: unless-stopped
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.frontend.rule=PathPrefix:/pgadmin4'
+      - 'traefik.frontend.entryPoints=web'
+      - 'traefik.http.routers.pgadmin.rule=Host(`localhost`) && PathPrefix(`/pgadmin4/`)'
+
+
+  grafana:
+    build:
+      context: .
+      dockerfile: ./grafana/Dockerfile
+    depends_on:
+      - postgres
+    restart: always
+    expose:
+      - '3000'
+    labels:
+      - 'traefik.http.routers.grafana.rule=Host(`localhost`) && PathPrefix(`/grafana`)'
+
+  reverse-proxy:
+    image: traefik:v2.6
+    command: --api.insecure=true --providers.docker
+    ports:
+      - '80:80'
+      - '8080:8080'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  
+  psql_exporter:
+    build:
+      context: .
+      dockerfile: ./psq-exporter/Dockerfile
+    container_name: psql_exporter
+    env_file:
+      - ./psq-exporter/.env
+    ports:
+      - '9187:9187'
+
+  prometheus:
+    build:
+      context: .
+      dockerfile: ./prometheus/Dockerfile
+    container_name: prometheus
+    ports:
+      - '9090:9090'
