@@ -66,8 +66,6 @@ services:
       - 'traefik.frontend.rule=PathPrefix:/static'
       - 'traefik.frontend.entryPoints=web'
       - 'traefik.http.routers.nginx.rule=Host(`localhost`) && PathPrefix(`/static`)'
-      # - "traefik.http.routers.nginx.middlewares=nginx-stripprefix"
-      # - "traefik.http.middlewares.nginx-stripprefix.stripprefix.prefixes=/static"
 
   postgres:
     build:
@@ -101,6 +99,7 @@ services:
     build:
       context: .
       dockerfile: ./grafana/Dockerfile
+    image: grafana
     depends_on:
       - postgres
     restart: always
@@ -122,6 +121,7 @@ services:
     build:
       context: .
       dockerfile: ./psq-exporter/Dockerfile
+    image: psql_exporter
     container_name: psql_exporter
     env_file:
       - ./psq-exporter/.env
@@ -132,6 +132,19 @@ services:
     build:
       context: .
       dockerfile: ./prometheus/Dockerfile
+    image : prometheus
     container_name: prometheus
     ports:
       - '9090:9090'
+  
+  client:
+    build:
+      context: .
+      dockerfile: ./client/Dockerfile
+    image: client
+    container_name: client
+    volumes:
+      - ./client:/client:z
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
